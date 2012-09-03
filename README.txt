@@ -1,4 +1,3 @@
-class_email.php 
 http://www.kaisersoft.net/t.php?phpemail
 
 
@@ -16,8 +15,8 @@ This is a PHP 5 class to send e-mails from web or command line scripts (CLI) via
 
  Here is some sample code for the class.
 <?PHP
-require_once 'class_email.php';
-$e = new email();
+require_once 'SendEmail.php';
+$e = new SendEmail();
 
 //First value is the URL of your server, the second the port number
 $e->set_server( 'smtp.localhost.local', 587);

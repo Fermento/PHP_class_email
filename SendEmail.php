@@ -1,7 +1,7 @@
 <?PHP
 /*
   * Project: class_email
-  * File name: class_email.php
+  * File name: SendEmail.php
   * Description: class to send email through external smtp servers
   * URL: http://www.kaisersoft.net/t.php?phpemail
   *
@@ -36,11 +36,11 @@
 	SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-class email{
+class SendEmail{
   const SLEEP_SOCKET = 2000;  //socket delay in microseconds. default 2000
                               //Your CPU usage may spike if this value is too low!
                               // Increase this for slow connections or
-			      // decrease to around 100 for *low* latency connections.
+                              // decrease to around 100 for *low* latency connections.
   public  $srv_ret;
   private $type;
   private $sender_email;

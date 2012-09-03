@@ -1,12 +1,13 @@
 <?PHP
+die('remove this');
 
 //test script for class_email
 
-require 'class_email.php';
+require 'SendEmail.php';
 //require 'class_email-small.php';
 
 
-$e = new email();
+$e = new SendEmail();
 $e->set_server( 'mail.local', 25);
 //$e->set_server( 'smtp.gmail.com', 587);
 
