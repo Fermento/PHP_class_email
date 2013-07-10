@@ -464,7 +464,7 @@ class SendEmail{
         $ret = $this->server_parse($socket);//, '220');
         $this->srv_ret['last'] = trim($ret);
         $this->srv_ret['all'] .= $this->srv_ret['last']."\n";
-        $this->srv_ret['full'] .= "notice: connected to server\nrecieved: ".$this->srv_ret['last']."\n";
+        $this->srv_ret['full'] .= "notice: connected to server\nreceived: ".$this->srv_ret['last']."\n";
         if( $this->expected_return($ret, '220') !== true ) {return false;} //Stop the operation if the server does not respond as expected
         return $socket;
       }
