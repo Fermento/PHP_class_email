@@ -23,15 +23,15 @@ $e->set_server( 'smtp.localhost.local', 587);
 //First value is your username, then your password
 $e->set_auth('user@localhost.local', 'YourPasswordHere');
 //Set the "From" setting for your e-mail. The Name will be base64 encoded
-$e->set_sender( 'Your Name here Ää, Öö, Üü', 'support@localhost.local' );
+$e->set_sender( 'Your Name here Ã„Ã¤, Ã–Ã¶, ÃœÃ¼', 'support@localhost.local' );
 
 //for one recipient
 $send_to = 'foo@localhost.local';
 //you may also specify multiple recipients by creating an array like this:
 $send_to = array('foo1@localhost.local', 'foo2@localhost.local', 'foo3@localhost.local');
 
-$subject = 'This is a test subject Ää, Öö, Üü';
-$body = "This is the test body of the message\r\nIt may contain special characters: Ää, Öö, Üü\r\n";
+$subject = 'This is a test subject Ã„Ã¤, Ã–Ã¶, ÃœÃ¼';
+$body = "This is the test body of the message\r\nIt may contain special characters: Ã„Ã¤, Ã–Ã¶, ÃœÃ¼\r\n";
 if( $e->mail($send_to, $subject, $body) == true )
 {
   //message was received by the smtp server
