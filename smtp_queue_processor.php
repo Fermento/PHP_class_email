@@ -61,9 +61,17 @@ $CONFIG['WEBSERVER_RDNS'] = php_uname('n'); //reverse DNS name of your webserver
 
 
 /* script settings - default values should be fine in this section */
-$CONFIG['SMTP_QUEUE_DIFF'] = 30; // this many seconds must have passed between runs
-$CONFIG['SMTP_SEND_DELAY'] = 5000000; //in us, deleay between processing DB row entried
-                                      //  1 * 1000000 = 1 second delay
+$CONFIG['SMTP_SEND_DELAY'] = 1000000; //in us, deleay between processing DB row entries
+                                      //  1 * 1000000 == 1 second delay
+$CONFIG['SMTP_PROCESS_BATCH'] = 10; // process this many items from the queue table and exit
+                                    //  this option is an "exploit protection" mechanism
+                                    //  in case some figures out how to write to
+                                    //  the smtp_queue table directly.
+                                    //  The following settings will only process upto
+                                    //   5 messages every 15 seconds.                                    //
+                                    //    $CONFIG['SMTP_QUEUE_DIFF'] = 15;
+                                    //    $CONFIG['SMTP_PROCESS_BATCH'] = 5;
+$CONFIG['SMTP_QUEUE_DIFF'] = 10; // this many seconds must pass between script runs
 
 /* ###### CONFIG END ###### */
 //if( !isset($base_dir) ){ $base_dir = '../../'; }
@@ -73,10 +81,14 @@ $CONFIG['SMTP_SEND_DELAY'] = 5000000; //in us, deleay between processing DB row 
 
 /* script starts here */
 $PID = rand_string(20); //unique by chance :)
+$CONFIG['SMTP_PROCESS_BATCH'] = ( is_int($CONFIG['SMTP_PROCESS_BATCH']) === true
+                                  && $CONFIG['SMTP_PROCESS_BATCH'] > 0 )
+                                    ? $CONFIG['SMTP_PROCESS_BATCH'] : 1;
 
-//Check when the queue was last processed and die() the request if
-// $CONFIG['SMTP_QUEUE_DIFF'] seconds have not passed
+
+//Check when the queue was last processed and die() if too soon
 process_lockfile( $CONFIG['SMTP_QUEUE_DIFF'], $PID );
+
 
 
 /* setup e-mail object */
@@ -90,7 +102,7 @@ $e->set_crypto( $CONFIG['SMTP_CRYPTO'] ); // starttls , tls ,  ssl or none
 
 
 /* connect to database */
-$conn = mysqli_connect( $CONFIG['DB_SERVER'], $CONFIG['DB_USER'], $CONFIG['DB_PASSWORD'], $CONFIG['DB_NAME'] );
+$conn = @mysqli_connect( $CONFIG['DB_SERVER'], $CONFIG['DB_USER'], $CONFIG['DB_PASSWORD'], $CONFIG['DB_NAME'] );
 if( !$conn ) {
   $msg = "Unable to connect with MySQL server\n"
         ."Error reported by mySQL: ".mysqli_connect_error();
@@ -112,15 +124,19 @@ if( !mysqli_set_charset( $conn, 'utf8') )
  * 2 = sent
  *
  */
-$sql = "SELECT * FROM smtp_queue WHERE send_status = 0 OR send_Status = 1 LIMIT 10";
-$res = @mysqli_query($conn, $sql);// or die("{$error_msg} <p>$sql</p>".mysqli_error($this->conn));
-if( !$res ){
+$sql = "SELECT id,send_to,subject,body FROM smtp_queue WHERE send_status = 0 OR send_Status = 1 LIMIT ?";
+if( !$stmt_outer = mysqli_prepare( $conn, $sql) ){
   $msg = "Error executing the following query: $sql\n"
-        ."mySQL reports: ".mysqli_error($this->conn);
+        ."mySQL reports: ".mysqli_error($conn);
   throw new Exception($msg);
 }
+$stmt_outer->bind_param("i", $CONFIG['SMTP_PROCESS_BATCH'] );
+$stmt_outer->execute();
+$stmt_outer->close();
 
-while( $row = mysqli_fetch_array($res, MYSQL_ASSOC) )
+
+$error_count = 0;
+while( $row = $stmt_outer->fetch_array(MYSQL_ASSOC) )
 {
   $smtp_ret = null;
   $send_to = trim($row['send_to'], ',');
@@ -134,7 +150,7 @@ while( $row = mysqli_fetch_array($res, MYSQL_ASSOC) )
 
   foreach( $asend_to as $to )
   {
-    if( $e->mail( $to , $row['subject'] ,  $row['body']) == true )
+    if( $e->mail( $to , $row['subject'] ,  $row['body']) === true )
     {
       $sql = 'UPDATE smtp_queue SET send_status = 2, send_date = NOW(), smtpd_return = ? WHERE id = ?';
       $stmt = mysqli_prepare( $conn, $sql);
@@ -143,22 +159,27 @@ while( $row = mysqli_fetch_array($res, MYSQL_ASSOC) )
       $stmt->close();
 
       echo "One out+\n";
+
     }else{
       $sql = 'UPDATE smtp_queue SET send_status = 1, send_date = NOW(), smtpd_return = ? WHERE id = ?';
       $stmt = mysqli_prepare( $conn, $sql);
       $stmt->bind_param("si", $e->srv_ret['full'], $row['id'] );
       $stmt->execute();
       $stmt->close();
+
       echo "One failed+ -- $smtp_ret\n";
+      ++$error_count;
     }
   }
-  usleep( $CONF['SMTP_SEND_DELAY'] ); //don't hammer the smtp server!
+  usleep( $CONFIG['SMTP_SEND_DELAY'] ); //don't hammer the smtp server!
 
 } //outer while
+$stmt_outer->close();
 
 
 set_action_flag( 0 , $PID );
-die("All done\n");
+echo "All done\n";
+if( $error_count === 0 ){ exit(0); }else{ exit(1); }
 
 
 
