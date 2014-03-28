@@ -77,7 +77,7 @@ $CONFIG['SMTP_QUEUE_DIFF'] = 10; // this many seconds must pass between script r
 
 /* ###### CONFIG END ###### */
 $debug = false;
-//require_once '../../conf/config.php';
+//<!--BUILD_SCRIPT_OPTION_CONFIG_STRING-->
 
 
 
