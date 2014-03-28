@@ -18,17 +18,17 @@
 /*
 CREATE TABLE IF NOT EXISTS `smtp_queue` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `send_to` varchar(255) COLLATE utf8_unicode_ci NOT NULL,
-  `send_status` smallint(6) NOT NULL DEFAULT '0',
+  `send_to` varchar(255) COLLATE utf8_unicode_ci NOT NULL COMMENT 'recipient email separated by comma',
+  `send_status` smallint(6) NOT NULL DEFAULT '0' COMMENT '0 == new , 1 == error , 2 == sent',
   `send_date` datetime DEFAULT NULL,
   `added2queue` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `header` text COLLATE utf8_unicode_ci,
   `subject` text COLLATE utf8_unicode_ci NOT NULL,
   `body` mediumtext COLLATE utf8_unicode_ci NOT NULL,
-  `smtpd_return` text COLLATE utf8_unicode_ci,
+  `smtpd_return` text COLLATE utf8_unicode_ci COMMENT 'contents of SendEmail->srv_ret[''full'']',
   PRIMARY KEY (`id`),
   KEY `send_status` (`send_status`)
-) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci AUTO_INCREMENT=1 ;
+) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci AUTO_INCREMENT=1;
  */
 
 /* ###### CONFIG START ###### */
@@ -61,6 +61,8 @@ $CONFIG['WEBSERVER_RDNS'] = php_uname('n'); //reverse DNS name of your webserver
 
 
 /* script settings - default values should be fine in this section */
+$CONFIG['SMTP_CLEAR_SUCCESS'] = false; //delete entry from queue table on success or keep
+                                      // to have a record of processed mails
 $CONFIG['SMTP_SEND_DELAY'] = 1000000; //in us, deleay between processing DB row entries
                                       //  1 * 1000000 == 1 second delay
 $CONFIG['SMTP_PROCESS_BATCH'] = 10; // process this many items from the queue table and exit
@@ -74,8 +76,8 @@ $CONFIG['SMTP_PROCESS_BATCH'] = 10; // process this many items from the queue ta
 $CONFIG['SMTP_QUEUE_DIFF'] = 10; // this many seconds must pass between script runs
 
 /* ###### CONFIG END ###### */
-//if( !isset($base_dir) ){ $base_dir = '../../'; }
-//require_once $base_dir.'conf/config.php';
+$debug = false;
+//require_once '../../conf/config.php';
 
 
 
@@ -84,6 +86,9 @@ $PID = rand_string(20); //unique by chance :)
 $CONFIG['SMTP_PROCESS_BATCH'] = ( is_int($CONFIG['SMTP_PROCESS_BATCH']) === true
                                   && $CONFIG['SMTP_PROCESS_BATCH'] > 0 )
                                     ? $CONFIG['SMTP_PROCESS_BATCH'] : 1;
+$CONFIG['SMTP_CLEAR_SUCCESS'] = ( is_bool($CONFIG['SMTP_CLEAR_SUCCESS']) === true
+                                && $CONFIG['SMTP_CLEAR_SUCCESS'] === true )
+                                  ? true : false;
 
 
 //Check when the queue was last processed and die() if too soon
@@ -99,6 +104,7 @@ $e->set_server( $CONFIG['SMTP_SERVER'] , $CONFIG['SMTP_PORT'] );
 $e->set_auth( $CONFIG['SMTP_USER'],  $CONFIG['SMTP_PASSWORD'] );
 $e->set_sender( $CONFIG['SMTP_FROM'] , $CONFIG['SMTP_FROM_EMAIL'] ); //this is the FROM: info of the email
 $e->set_crypto( $CONFIG['SMTP_CRYPTO'] ); // starttls , tls ,  ssl or none
+if( $CONFIG['SMTP_PASSWORD'] == 12345 ){ echo "1,2,3,4,5? .... That's amazing! I've got the same combination on my luggage!\n"; }
 
 
 /* connect to database */
@@ -132,14 +138,16 @@ if( !$stmt_outer = mysqli_prepare( $conn, $sql) ){
 }
 $stmt_outer->bind_param("i", $CONFIG['SMTP_PROCESS_BATCH'] );
 $stmt_outer->execute();
-$stmt_outer->close();
+$stmt_outer->store_result();
+$row = array();
+$stmt_outer->bind_result( $row['id'] , $row['send_to'] , $row['subject'] , $row['body'] );
 
 
 $error_count = 0;
-while( $row = $stmt_outer->fetch_array(MYSQL_ASSOC) )
+$processed_count = 0;
+while( $stmt_outer->fetch() )
 {
-  $smtp_ret = null;
-  $send_to = trim($row['send_to'], ',');
+  $send_to = trim( $row['send_to'] , ',');
   if(strstr($send_to, ','))
   {
     $asend_to = explode(',', $send_to);
@@ -150,35 +158,52 @@ while( $row = $stmt_outer->fetch_array(MYSQL_ASSOC) )
 
   foreach( $asend_to as $to )
   {
-    if( $e->mail( $to , $row['subject'] ,  $row['body']) === true )
+    if( $e->mail( $to , $row['subject'] ,  $row['body'] ) === true )
     {
-      $sql = 'UPDATE smtp_queue SET send_status = 2, send_date = NOW(), smtpd_return = ? WHERE id = ?';
-      $stmt = mysqli_prepare( $conn, $sql);
-      $stmt->bind_param("si", $e->srv_ret['full'], $row['id'] );
-      $stmt->execute();
-      $stmt->close();
+      if( $CONFIG['SMTP_CLEAR_SUCCESS'] === true ){
+        $sql = 'DELETE FROM smtp_queue WHERE id = ?';
+        if( $stmt = mysqli_prepare( $conn, $sql) ){
+          $stmt->bind_param("i", $row['id'] );
+          $stmt->execute();
+          $stmt->close();
+        }
 
-      echo "One out+\n";
+      }else{
+        $sql = 'UPDATE smtp_queue SET send_status = 2, send_date = NOW(), smtpd_return = ? WHERE id = ?';
+        if( $stmt = mysqli_prepare( $conn, $sql) ){
+          $stmt->bind_param("si", $e->srv_ret['full'], $row['id'] );
+          $stmt->execute();
+          $stmt->close();
+        }
+      }
+
+      echo "One out\n";
+      ++$processed_count;
 
     }else{
       $sql = 'UPDATE smtp_queue SET send_status = 1, send_date = NOW(), smtpd_return = ? WHERE id = ?';
-      $stmt = mysqli_prepare( $conn, $sql);
-      $stmt->bind_param("si", $e->srv_ret['full'], $row['id'] );
-      $stmt->execute();
-      $stmt->close();
-
-      echo "One failed+ -- $smtp_ret\n";
+      if( $stmt = mysqli_prepare( $conn, $sql) ){
+        $stmt->bind_param("si", $e->srv_ret['full'], $row['id'] );
+        $stmt->execute();
+        $stmt->close();
+      }
+      echo "One failed - see 'smtpd_return' in smtp_queue table for row {$row['id']}\n";
       ++$error_count;
     }
+
   }
   usleep( $CONFIG['SMTP_SEND_DELAY'] ); //don't hammer the smtp server!
 
 } //outer while
+
+
+//clean up
 $stmt_outer->close();
-
-
+mysqli_close($conn);
 set_action_flag( 0 , $PID );
-echo "All done\n";
+
+
+echo "All done - processed $processed_count messages with $error_count errors\n";
 if( $error_count === 0 ){ exit(0); }else{ exit(1); }
 
 
@@ -201,8 +226,8 @@ if( $error_count === 0 ){ exit(0); }else{ exit(1); }
  * @param string &$PID process ID of this script - some unique string
  */
 function process_lockfile( &$lock_seconds , &$PID ){
+  global $debug;
   $filename = 'smtp_process_processor.php.lock';
-  $debug = true;
   $dir_slash = get_dir_slash();
   $run_now = microtime(true);
   $lock_seconds_stale = (int)ini_get('max_execution_time') + 10;
@@ -241,7 +266,7 @@ function process_lockfile( &$lock_seconds , &$PID ){
       {
         // died, write new lock info
         if( $debug === true ){
-          echo "lock seconds($lock_seconds) habe passed, set to active\n";
+          echo "lock seconds($lock_seconds) have passed, set to active\n";
         }
         set_action_flag( 1 , $PID);
         validate_pid( $PID );
