@@ -1,11 +1,11 @@
 <?php
 /*
- * Example script SMTP queue script for the SendEmail() class
+ * Example SMTP queue script for the SendEmail() class
  *
- *  Sending email directly from your PHP script will result in a multiple
- *  second long "hang" while the script is communicating with the external
- *  SMTP server. An alternative to sending e-mails directly is to queue them somewhere
- *  and have another script process the queued messages.
+ *  Sending email directly from your PHP script will make your script appear to freeze
+ *  while the SendEmail class communcates with the SMTP server.
+ *  This script will process emails in the background to ensure that the user UI will
+ *  not freeze.
  *
  *  This script will receive a list of unsent messages from a mySQL table and process them
  *  one by one.
@@ -19,15 +19,14 @@
 CREATE TABLE IF NOT EXISTS `smtp_queue` (
   `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
   `send_to` varchar(255) COLLATE utf8_unicode_ci NOT NULL COMMENT 'recipient email separated by comma',
-  `send_status` smallint(6) NOT NULL DEFAULT '0' COMMENT '0 == new , 1 == error , 2 == sent',
+  `send_status` tinyint(1) NOT NULL DEFAULT '0' COMMENT '0 == new , 1 == error , 2 == sent',
   `send_date` datetime DEFAULT NULL,
   `added2queue` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `header` text COLLATE utf8_unicode_ci,
   `subject` text COLLATE utf8_unicode_ci NOT NULL,
   `body` mediumtext COLLATE utf8_unicode_ci NOT NULL,
   `smtpd_return` text COLLATE utf8_unicode_ci COMMENT 'contents of SendEmail->srv_ret[''full'']',
-  PRIMARY KEY (`id`),
-  KEY `send_status` (`send_status`)
+  PRIMARY KEY (`id`)
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci AUTO_INCREMENT=1;
  */
 
