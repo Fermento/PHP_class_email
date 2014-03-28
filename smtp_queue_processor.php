@@ -54,9 +54,9 @@ $CONFIG['SMTP_PASSWORD'] = '123'; // smtp account password
 $CONFIG['SMTP_FROM'] = 'Your Name'; //Name of sender
 $CONFIG['SMTP_FROM_EMAIL'] = 'user@gmail.com'; //reply to e-mail address
 $CONFIG['SMTP_CRYPTO'] = 'tls'; // encryption type of smtp connection
-                                //on of the following      starttls , tls ,  ssl or none
+                                //  one of the following   starttls , tls ,  ssl or none
 $CONFIG['WEBSERVER_RDNS'] = php_uname('n'); //reverse DNS name of your webserver. this needs to be
-                                            // the correct rDNS/FQDN for some STMP servers
+                                            // the correct rDNS/FQDN for some SMTP servers
 
 
 /* script settings - default values should be fine in this section */
@@ -67,11 +67,11 @@ $CONFIG['SMTP_SEND_DELAY'] = 1000000; //in us, deleay between processing DB row 
 $CONFIG['SMTP_PROCESS_BATCH'] = 10; // process this many items from the queue table and exit
                                     //  this option is an "exploit protection" mechanism
                                     //  in case some figures out how to write to
-                                    //  the smtp_queue table directly.
+                                    //  your smtp_queue table directly.
                                     //  The following settings will only process upto
-                                    //   5 messages every 15 seconds.                                    //
-                                    //    $CONFIG['SMTP_QUEUE_DIFF'] = 15;
+                                    //   5 messages every 15 seconds.
                                     //    $CONFIG['SMTP_PROCESS_BATCH'] = 5;
+                                    //    $CONFIG['SMTP_QUEUE_DIFF'] = 15;
 $CONFIG['SMTP_QUEUE_DIFF'] = 10; // this many seconds must pass between script runs
 
 /* ###### CONFIG END ###### */
