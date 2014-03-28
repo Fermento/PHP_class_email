@@ -1,6 +1,19 @@
 <?php
 /*
- * this script will process the SMTP queue and send the messages
+ * Example script SMTP queue script for the SendEmail() class
+ *
+ *  Sending email directly from your PHP script will result in a multiple
+ *  second long "hang" while the script is communicating with the external
+ *  SMTP server. An alternative to sending e-mails directly is to queue them somewhere
+ *  and have another script process the queued messages.
+ *
+ *  This script will receive a list of unsent messages from a mySQL table and process them
+ *  one by one.
+ *    * prevents multiple scripts from processing the queue. This protects the server from
+ *      consuming too much RAM when sending large e-mail bodies.
+ *    * may be called periodically by a cronjob or via exec to send e-mails right away
+ *      The following exec call will execute the script in the background.
+ *        exec( 'php -f "/path/to/smtp_queue_processor.php" &> /dev/null &' );
  */
 /*
 CREATE TABLE IF NOT EXISTS `smtp_queue` (
@@ -18,12 +31,16 @@ CREATE TABLE IF NOT EXISTS `smtp_queue` (
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci AUTO_INCREMENT=1 ;
  */
 
-set_time_limit(90);
-ini_set('memory_limit', '5M'); //large e-mail bodies will consume a lot of ram on fwrite 5M should be enough
+/* ###### CONFIG START ###### */
+set_time_limit(90); //should protect the queue processor from hanging too long during
+                    // a communication error with the server.
+                    // never seen it happended, only a precaution...
+ini_set('memory_limit', '5M'); //large e-mail bodies will consume a lot of ram during
+                               // fwrite to the socket - 5M should cover most scenarios
+
+
 $CONFIG = array();
-
 /* database information */
-
 $CONFIG['DB_SERVER'] = 'localhost'; //database server name
 $CONFIG['DB_NAME'] = 'smtp_queue'; //name of database containing the "smtp_queue" table above
 $CONFIG['DB_USER'] = 'foo'; //database username
@@ -32,7 +49,7 @@ $CONFIG['DB_PASSWORD'] = 'bar'; //database password
 
 /* SMTP Server account info */
 $CONFIG['SMTP_SERVER'] = 'smtp.gmail.com'; //IP or FQFDN of your server
-$CONFIG['SMTP_PORT'] = 143; // port number for your smtp server
+$CONFIG['SMTP_PORT'] = 465; // port number for your smtp server
 $CONFIG['SMTP_USER'] = 'user@gmail.com'; // smtp account name
 $CONFIG['SMTP_PASSWORD'] = '123'; // smtp account password
 $CONFIG['SMTP_FROM'] = 'Your Name'; //Name of sender
@@ -44,7 +61,7 @@ $CONFIG['WEBSERVER_RDNS'] = php_uname('n'); //reverse DNS name of your webserver
 
 
 /* script settings - default values should be fine in this section */
-$CONFIG['SMTP_QUEUE_DIFF'] = 300; // this many seconds must have passed between runs
+$CONFIG['SMTP_QUEUE_DIFF'] = 30; // this many seconds must have passed between runs
 $CONFIG['SMTP_SEND_DELAY'] = 5000000; //in us, deleay between processing DB row entried
                                       //  1 * 1000000 = 1 second delay
 
@@ -55,10 +72,11 @@ $CONFIG['SMTP_SEND_DELAY'] = 5000000; //in us, deleay between processing DB row 
 
 
 /* script starts here */
+$PID = rand_string(20); //unique by chance :)
 
 //Check when the queue was last processed and die() the request if
 // $CONFIG['SMTP_QUEUE_DIFF'] seconds have not passed
-process_lockfile( $CONFIG['SMTP_QUEUE_DIFF'] );
+process_lockfile( $CONFIG['SMTP_QUEUE_DIFF'], $PID );
 
 
 /* setup e-mail object */
@@ -139,8 +157,7 @@ while( $row = mysqli_fetch_array($res, MYSQL_ASSOC) )
 } //outer while
 
 
-set_action_flag(0);
-//all done
+set_action_flag( 0 , $PID );
 die("All done\n");
 
 
@@ -160,12 +177,14 @@ die("All done\n");
  * checks if the script is allowed to process the smtp queue
  * ends execution or updates the lockfile
  * @param int $lock_seconds this many seconds must have passed between script runs
+ * @param string &$PID process ID of this script - some unique string
  */
-function process_lockfile( &$lock_seconds ){
+function process_lockfile( &$lock_seconds , &$PID ){
   $filename = 'smtp_process_processor.php.lock';
   $debug = true;
   $dir_slash = get_dir_slash();
   $run_now = microtime(true);
+  $lock_seconds_stale = (int)ini_get('max_execution_time') + 10;
 
   $lock = getcwd().$dir_slash.$filename;
   if(file_exists($lock) === true )
@@ -179,8 +198,8 @@ function process_lockfile( &$lock_seconds ){
       if( $debug === true ){
         echo "parts from lockfile\n";
       }
-      $lockfile_active = (int)$parts[0];
-      $lockfile_last_run = (int)$parts[1];
+      $lockfile_active = (int)$parts[0]; // 0 / 1
+      $lockfile_last_run = (int)$parts[1]; // timestamp
       unset($parts);
     }else{
       if( $debug === true ){
@@ -191,18 +210,29 @@ function process_lockfile( &$lock_seconds ){
     }
 
 
-    $run_last = ($lockfile_last_run > 0 ) ? ($lockfile_last_run) : $run_now-1-$lock_seconds; //set last run
-
+    // process info from lockfile
     if( $lockfile_active !== 0 )
     {
+      $last_run = ($lockfile_last_run > 0 ) ? $lockfile_last_run : $run_now - $lock_seconds - 1;
+
       //too early or died last time?
-      if( $run_now - $lock_seconds > $run_last )
+      if( $run_now - $lock_seconds > $last_run )
       {
         // died, write new lock info
         if( $debug === true ){
-          echo "lock expired - might have died, write new info\n";
+          echo "lock seconds($lock_seconds) habe passed, set to active\n";
         }
-        set_action_flag(1);
+        set_action_flag( 1 , $PID);
+        validate_pid( $PID );
+
+
+      }elseif( $run_now - $lock_seconds_stale > $last_run ){
+        // died, write new lock info
+        if( $debug === true ){
+          echo "lock expired - script may have died, set to active\n";
+        }
+        set_action_flag( 1 , $PID);
+        validate_pid( $PID );
 
       }else{
         if( $debug === true ){
@@ -216,7 +246,8 @@ function process_lockfile( &$lock_seconds ){
       if( $debug === true ){
         echo "lockfile exists but script not active\n";
       }
-      set_action_flag(1);
+      set_action_flag( 1 , $PID);
+      validate_pid( $PID );
     }
 
 
@@ -225,17 +256,59 @@ function process_lockfile( &$lock_seconds ){
     if( $debug === true ){
       echo "lockfile does not exist, write new\n";
     }
-    set_action_flag(1);
+    set_action_flag( 1 , $PID);
+    validate_pid( $PID );
   }
 }
 
 
 
 /**
+ * compares script PID with PID from lockfile and dies when not the same
+ * @param string $PID unique id for this script run
+ */
+function validate_pid( &$PID ){
+  global $debug;
+  usleep(1000000); // 1 second delay to ensure that other scripts are done writing
+
+  $content = get_lockfile();
+  $c = explode('|', $content);
+  $lock_pid = (string)$c[2];
+
+  if( $PID !== $lock_pid ){
+    if( $debug === true ){
+      echo "error another script overwrote our PID - die() now\n";
+    }
+    die();
+  }
+}
+
+
+
+/**
+ * retrieves everything from the lockfile
+ * @return string full content of lockfile, after trim()
+ */
+function get_lockfile(){
+  $filename = 'smtp_process_processor.php.lock';
+  $dir_slash = get_dir_slash();
+
+  $lock = getcwd().$dir_slash.$filename;
+  $handle = fopen($lock, "r");
+  $content = @fread($handle, filesize($lock));
+  fclose($handle);
+
+  return (string)trim($content);
+}
+
+
+/**
  * function to set the lockfile action flag to 0
  * @param int $flag 0 if queue is done or 1 if queue is running
+ * @param string $PID string written to lockfile to ensure that this script
+ *                    owns the lock. should prevent race condition
  */
-function set_action_flag( $flag=0 ){
+function set_action_flag( $flag , $PID ){
   $filename = 'smtp_process_processor.php.lock';
   $w_flag = ( $flag == 1 ) ? 1 : 0 ;
   $dir_slash = get_dir_slash();
@@ -243,7 +316,7 @@ function set_action_flag( $flag=0 ){
 
   $lock = getcwd().$dir_slash.$filename;
   $handle = fopen($lock, "wb");
-  $write_this = $w_flag.'|'.$run_now; // mark script as active
+  $write_this = $w_flag.'|'.$run_now.'|'.$PID; // mark script as active
   fwrite( $handle, $write_this);
   fclose($handle);
 }
@@ -264,5 +337,34 @@ function get_dir_slash(){
   }
 
   return $slash;
+}
+
+/**
+ * create a random string, uses mt_rand. This one is faster then my old GetRandomString()
+ * rand_string(20, array('A','Z','a','z',0,9), '`,~,!,@,#,%,^,&,*,(,),_,|,+,=,-');
+ * rand_string(16, array('A','Z','a','z',0,9), '.,/')
+ * @param integer $lenth length of random string
+ * @param array $range specify range as array array('A','Z','a','z',0,9) == [A-Za-z0-9]
+ * @param string $other comma separated list of characters !,@,#,$,%,^,&,*,(,)
+ * @return string random string of requested length
+ */
+function rand_string($lenth, $range=array('A','Z','a','z',0,9), $other='' ) {
+  $out = '';
+  $sel_range = array();
+
+  $cnt_range = count($range);
+  for( $x=0 ; $x < $cnt_range ; $x=$x+2 ){
+	$sel_range = array_merge($sel_range, range($range[$x], $range[$x+1]));
+  }
+
+  if( $other !== '' ){
+	$sel_range = array_merge($sel_range, explode (',', $other));
+  }
+
+  $cnt_sel = count($sel_range);
+  $max_sel = $cnt_sel - 1;
+  for( $x = 0 ; $x < $lenth ; ++$x )
+	$out .= $sel_range[mt_rand( 0 , $max_sel)];
+  return $out;
 }
 ?>
