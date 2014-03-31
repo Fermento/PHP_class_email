@@ -286,6 +286,32 @@ class SendEmail{
   }
 
   /**
+   * function to add an e-mail to the SMTP queue table. use smtp_queue_processor.php to
+   * send the queued messages
+   * @param string $to send to e-mail address in form user@domain.com
+   * @param string $subject subject as one line of text (no line breaks). will be base64 encoded
+   * @param string $body the body of your e-mail. will be base64 encoded
+   * @param string $headers=null any custom headers or null to use the default
+   * @param object $db_conn mysqli database connection object with established and UTF-8 encoded connection.
+   * @return bool true/false true on success and false on failure
+   */
+  function queue( $to=null, $subject=null, $body=null, $headers=null, &$db_conn=false ){
+
+    if( $to == null || $subject == null || $body == null || $db_conn === false ){ return false; }	//Do not send empty mails
+    if( get_class($db_conn) !== 'mysqli' ){ return false; }
+
+    $sql = 'INSERT INTO smtp_queue( send_to, header, subject, body) VALUES( ? , ? , ? , ? )';
+    if( $stmt = mysqli_prepare($db_conn , $sql) ){
+      $stmt->bind_param('ssss', $to, $headers, $subject, $body);
+      $stmt->execute();
+      $stmt->close();
+      return true;
+    }else{
+      return false;
+    }
+  }
+
+  /**
    * this function prepares the subject and passes the e-mail
    * to the correct mail function.
    * @param string $to send to e-mail address in form user@domain.com

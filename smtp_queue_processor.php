@@ -3,17 +3,30 @@
  * Example SMTP queue script for the SendEmail() class
  *
  *  Sending email directly from your PHP script will make your script appear to freeze
- *  while the SendEmail class communcates with the SMTP server.
+ *  while the SendEmail class communicates with the SMTP server.
  *  This script will process emails in the background to ensure that the user UI will
- *  not freeze.
+ *  not be delayed.
  *
- *  This script will receive a list of unsent messages from a mySQL table and process them
+ *  The script will receive a list of unsent messages from a mySQL table and process them
  *  one by one.
- *    * prevents multiple scripts from processing the queue. This protects the server from
- *      consuming too much RAM when sending large e-mail bodies.
- *    * may be called periodically by a cronjob or via exec to send e-mails right away
- *      The following exec call will execute the script in the background.
- *        exec( 'php -f "/path/to/smtp_queue_processor.php" &> /dev/null &' );
+ *
+ *  Supported Scenarios
+ *    * execute this script right after adding an e-mail to the queue table. this acts like
+ *      a thread so your main script will finish without delay.
+ *      *WARNING* I limited the script to one execution at a time, to procect the server
+ *         from running out of RAM. The script may process multiple entries but will not
+ *         process e-mails added while the script is running. Use a cronjob to process these
+ *         messages without causing a long delay.
+ *
+ *      Example PHP exec command:
+ *         exec( 'php -f "/path/to/smtp_queue_processor.php" &> /dev/null &' );
+ *
+ *    * execute every n minutes via cronjob
+ *      Example cronjob command:
+ *        php -f "/path/to/smtp_queue_processor.php" &> /dev/null
+ *
+ *    * both at the same time. I use this on my server to process most emails right away
+ *      and run a cronjob ever minute to catch any left over messages.
  */
 /*
 CREATE TABLE IF NOT EXISTS `smtp_queue` (
