@@ -239,7 +239,7 @@ if( $error_count === 0 ){ exit(0); }else{ exit(1); }
  */
 function process_lockfile( &$lock_seconds , &$PID ){
   global $debug;
-  $filename = 'smtp_process_processor.php.lock';
+  $filename = 'smtp_queue_processor.lock';
   $dir_slash = get_dir_slash();
   $run_now = microtime(true);
   $lock_seconds_stale = (int)ini_get('max_execution_time') + 10;
@@ -348,7 +348,7 @@ function validate_pid( &$PID ){
  * @return string full content of lockfile, after trim()
  */
 function get_lockfile(){
-  $filename = 'smtp_process_processor.php.lock';
+  $filename = 'smtp_queue_processor.lock';
   $dir_slash = get_dir_slash();
 
   $lock = getcwd().$dir_slash.$filename;
@@ -367,7 +367,7 @@ function get_lockfile(){
  *                    owns the lock. should prevent race condition
  */
 function set_action_flag( $flag , $PID ){
-  $filename = 'smtp_process_processor.php.lock';
+  $filename = 'smtp_queue_processor.lock';
   $w_flag = ( $flag == 1 ) ? 1 : 0 ;
   $dir_slash = get_dir_slash();
   $run_now = microtime(true);
